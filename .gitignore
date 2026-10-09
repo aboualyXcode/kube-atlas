@@ -1,0 +1,4 @@
+node_modules/
+dist/
+snapshot-*/
+.DS_Store

@@ -1,10 +1,45 @@
-# Kube Atlas
+<h1 align="center">Kube Atlas</h1>
 
-**Kubernetes and Amazon EKS, drawn as a map you can click.** See what every component does and how they connect, play animated flows through the cluster, and watch each of 45 production failures travel from where it starts to where you notice it.
+<p align="center">
+  <a href="https://aboualyxcode.github.io/kube-atlas/"><img alt="atlas: aboualyxcode.github.io/kube-atlas" src="https://img.shields.io/badge/atlas-aboualyxcode.github.io%2Fkube--atlas-2a9d8f"></a>
+  <a href="https://github.com/aboualyXcode/kube-atlas/actions/workflows/ci.yml"><img alt="CI status" src="https://img.shields.io/github/actions/workflow/status/aboualyXcode/kube-atlas/ci.yml?branch=main&logo=github&label=CI"></a>
+  <img alt="failures: 45" src="https://img.shields.io/badge/failures-45-d7263d">
+  <img alt="flows: 13" src="https://img.shields.io/badge/flows-13-6f42c1">
+  <img alt="runbooks: 8" src="https://img.shields.io/badge/runbooks-8-e9a23b">
+  <a href="https://github.com/aboualyXcode/kube-atlas/blob/main/.github/workflows/pages.yml"><img alt="deploy: GitHub Pages" src="https://img.shields.io/badge/deploy-GitHub%20Pages-2f6fe4"></a>
+  <a href="LICENSE"><img alt="license: MIT" src="https://img.shields.io/badge/license-MIT-4c9a5a"></a>
+</p>
 
-![The cluster map playing "From kubectl apply to serving traffic", step 5: the scheduler binds the pod](docs/images/flow.png)
+Kube Atlas is **Kubernetes and Amazon EKS, drawn as a map you can click**. See what every component does and how they connect, play **animated flows** through the cluster, and watch each of **45 production failures** travel from where it starts to where you notice it.
 
-Open `index.html` in a browser. There is no build step, no server and no dependency, and nothing you paste leaves your machine.
+It is built for the moment something is broken: **paste what the cluster printed**, get the matching failure with its path drawn on the map, then follow its investigation, resolution and prevention. The same data also drives the Markdown docs, a command-line matcher and a single offline file, and it is validated on every push, so the site, the docs and the terminal cannot disagree.
+
+<p align="center">
+  <a href="https://aboualyxcode.github.io/kube-atlas/"><img alt="Open the atlas" src="https://img.shields.io/badge/-%E2%96%B6%20%20Open%20the%20atlas-2f6fe4?style=for-the-badge"></a>
+</p>
+
+<p align="center">
+  <a href="https://aboualyxcode.github.io/kube-atlas/"><b>aboualyxcode.github.io/kube-atlas/</b></a><br>
+  <sub>Nothing to install. Nothing you paste leaves your browser.</sub>
+</p>
+
+<p align="center">
+  <a href="https://aboualyxcode.github.io/kube-atlas/"><img src="docs/images/flow.png" alt="The cluster map playing &quot;From kubectl apply to serving traffic&quot;, step 5: the scheduler binds the pod" width="900"></a>
+</p>
+
+## Jump straight in
+
+| Start here | What you land on |
+|---|---|
+| [**Architecture**](https://aboualyxcode.github.io/kube-atlas/#/architecture) | The cluster as a map of 24 components, with five flows to play. |
+| [**EKS**](https://aboualyxcode.github.io/kube-atlas/#/eks) | The managed control plane, your VPC and the AWS services around it. |
+| [**Failures**](https://aboualyxcode.github.io/kube-atlas/#/failures) | 45 failures; start from a symptom, a heat map, or pasted `kubectl` output. |
+| [**Incidents**](https://aboualyxcode.github.io/kube-atlas/#/incidents) | Four production investigations replayed hop by hop. |
+| [**Operations**](https://aboualyxcode.github.io/kube-atlas/#/operations) | Signals, runbooks, upgrade sequence and capacity calculators. |
+| [A failure, investigated](https://aboualyxcode.github.io/kube-atlas/#/failures/oomkilled?tab=investigate) | `OOMKilled`, opened on its investigation tab. |
+| [An incident, mid-replay](https://aboualyxcode.github.io/kube-atlas/#/incidents/subnet-ran-out/4) | "The subnet ran out", at hop 4. |
+
+Prefer to run it yourself? Open `index.html` in a browser. There is no build step, no server and no dependency.
 
 ## What's inside
 
@@ -43,7 +78,7 @@ Statuses such as `CrashLoopBackOff`, `Pending` or a 503 are **symptoms**: they t
 ## Use it during an incident
 
 - **Paste what the cluster printed.** In Failures, paste a status, an event, `kubectl describe` output or a log line; the best match opens with its path drawn on the map.
-- **Share a link.** Every view, selection and step has its own address, for example `index.html#/failures/oomkilled?tab=investigate` or `index.html#/incidents/subnet-ran-out/4`.
+- **Share a link.** Every view, selection and step has its own address, for example `https://aboualyxcode.github.io/kube-atlas/#/failures/oomkilled?tab=investigate` or `https://aboualyxcode.github.io/kube-atlas/#/incidents/subnet-ran-out/4`. The same fragments work on a local `index.html`.
 - **Stay in the terminal.**
 
   ```sh
@@ -82,6 +117,8 @@ reference/                 a production EKS platform: eksctl cluster, Karpenter,
 tools/                     read-only diagnostics: cluster snapshot, DNS check, EKS preflight
 scripts/atlas.mjs          validate, generate docs, build one file, match, show
 tests/                     unit tests and a browser smoke test
+.github/workflows/         CI (tests, validation, browser smoke test) and the GitHub Pages deploy
+CONTRIBUTING.md            how to add a failure, component, flow or incident
 ```
 
 The examples follow Larder, a fictional grocery delivery company running `larder-prod` on EKS across three Availability Zones in `eu-west-1`, so the security group in an incident is the one in the reference configuration and the alert that pages you leads to the entry that explains it.
@@ -97,7 +134,7 @@ kubectl describe pod -n lab-oomkilled -l app=catalog-cache | node scripts/atlas.
 make lab-clean LAB=oomkilled
 ```
 
-Each lab asks one question before giving the fix. See [`labs/`](labs/README.md).
+There are 17 labs, and each one asks a question before it gives the fix. See [`labs/`](labs/README.md).
 
 ## Development
 
@@ -113,7 +150,11 @@ npm install --no-save playwright && npx playwright install chromium
 npm run test:browser     # render every view and all 45 failures in Chromium
 ```
 
-Pushes to `main` publish the atlas to GitHub Pages through `.github/workflows/pages.yml`.
+## Deployment
+
+Pushes to `main` publish the atlas to https://aboualyxcode.github.io/kube-atlas/ through [`.github/workflows/pages.yml`](.github/workflows/pages.yml). The workflow copies `index.html`, `assets/`, `data/`, `docs/`, `labs/` and `reference/` into the site, so the Markdown pages are served alongside it.
+
+To publish your own fork, open **Settings → Pages** and set **Source** to **GitHub Actions**, then push to `main` or run the workflow by hand.
 
 ## Contributing
 

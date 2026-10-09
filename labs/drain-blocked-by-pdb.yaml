@@ -1,0 +1,43 @@
+# Lab: drain-blocked-by-pdb
+# Atlas:     index.html#/failures/drain-blocked-by-pdb   (Markdown: docs/failures/drain-blocked-by-pdb.md)
+# Reproduce: kubectl apply -f labs/drain-blocked-by-pdb.yaml
+#            NODE=$(kubectl get pod -n lab-drain-blocked-by-pdb -l app=orders-api -o jsonpath='{.items[0].spec.nodeName}')
+#            kubectl drain "$NODE" --ignore-daemonsets --delete-emptydir-data --timeout=60s
+# Observe:   "Cannot evict pod as it would violate the pod's disruption budget", repeated
+#            kubectl get pdb -n lab-drain-blocked-by-pdb   (ALLOWED DISRUPTIONS 0)
+# Question:  the PDB promises something that can never be true during a drain. What?
+# Fix:       maxUnavailable: 1 instead of minAvailable: 2, re-apply, drain again; then kubectl uncordon "$NODE".
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab-drain-blocked-by-pdb
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-api
+  namespace: lab-drain-blocked-by-pdb
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: orders-api }
+  template:
+    metadata:
+      labels: { app: orders-api }
+    spec:
+      containers:
+        - name: api
+          image: nginx:1.27
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 64Mi }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: orders-api
+  namespace: lab-drain-blocked-by-pdb
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels: { app: orders-api }

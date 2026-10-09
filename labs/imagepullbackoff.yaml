@@ -1,0 +1,31 @@
+# Lab: imagepullbackoff
+# Atlas:     index.html#/failures/imagepullbackoff   (Markdown: docs/failures/imagepullbackoff.md)
+# Reproduce: kubectl apply -f labs/imagepullbackoff.yaml
+# Observe:   kubectl get pods -n lab-imagepullbackoff -w   (ErrImagePull, then ImagePullBackOff)
+#            kubectl describe pod -n lab-imagepullbackoff -l app=storefront | sed -n '/Events/,$p'
+# Question:  which row of the table in the catalog entry does the registry's answer match?
+# Fix:       use an image tag that exists (nginx:1.27), re-apply.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab-imagepullbackoff
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: storefront
+  namespace: lab-imagepullbackoff
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: storefront }
+  template:
+    metadata:
+      labels: { app: storefront }
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.27.99-does-not-exist
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 64Mi }

@@ -1,0 +1,48 @@
+# Lab: service-no-endpoints
+# Atlas:     index.html#/failures/service-no-endpoints   (Markdown: docs/failures/service-no-endpoints.md)
+# Reproduce: kubectl apply -f labs/service-no-endpoints.yaml
+# Observe:   kubectl describe svc orders-api -n lab-service-no-endpoints   (Endpoints: <none>)
+#            kubectl get pods -n lab-service-no-endpoints --show-labels
+#            kubectl run curl -n lab-service-no-endpoints --rm -it --restart=Never --image=busybox:1.36 -- wget -qO- -T 3 http://orders-api
+# Question:  every pod is Running and Ready. Why does the Service still have nowhere to send traffic?
+# Fix:       remove `tier: backend` from the Service selector (or add it to the pod labels), re-apply.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab-service-no-endpoints
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-api
+  namespace: lab-service-no-endpoints
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: orders-api }
+  template:
+    metadata:
+      labels: { app: orders-api }
+    spec:
+      containers:
+        - name: api
+          image: nginx:1.27
+          ports:
+            - { name: http, containerPort: 80 }
+          readinessProbe:
+            httpGet: { path: /, port: http }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 64Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-api
+  namespace: lab-service-no-endpoints
+spec:
+  selector:
+    app: orders-api
+    tier: backend
+  ports:
+    - { name: http, port: 80, targetPort: http }

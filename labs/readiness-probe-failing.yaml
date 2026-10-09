@@ -1,0 +1,47 @@
+# Lab: readiness-probe-failing
+# Atlas:     index.html#/failures/readiness-probe-failing   (Markdown: docs/failures/readiness-probe-failing.md)
+# Reproduce: kubectl apply -f labs/readiness-probe-failing.yaml
+# Observe:   kubectl get pods -n lab-readiness-probe-failing   (Running, READY 0/1, no restarts)
+#            kubectl get endpointslices -n lab-readiness-probe-failing -o wide
+#            kubectl run curl -n lab-readiness-probe-failing --rm -it --restart=Never --image=busybox:1.36 -- wget -qO- -T 3 http://storefront
+# Question:  the container is healthy. Who decided it gets no traffic, and on what evidence?
+# Fix:       point the readiness probe at a path nginx serves (path: /), re-apply.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab-readiness-probe-failing
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: storefront
+  namespace: lab-readiness-probe-failing
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: storefront }
+  template:
+    metadata:
+      labels: { app: storefront }
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.27
+          ports:
+            - { name: http, containerPort: 80 }
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 64Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: storefront
+  namespace: lab-readiness-probe-failing
+spec:
+  selector: { app: storefront }
+  ports:
+    - { name: http, port: 80, targetPort: http }

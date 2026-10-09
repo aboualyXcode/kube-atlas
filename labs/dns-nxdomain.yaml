@@ -1,0 +1,65 @@
+# Lab: dns-nxdomain
+# Atlas:     index.html#/failures/dns-nxdomain   (Markdown: docs/failures/dns-nxdomain.md)
+# Reproduce: kubectl apply -f labs/dns-nxdomain.yaml
+# Observe:   kubectl logs -n lab-dns-nxdomain checkout -f   (payments-api: NXDOMAIN, repeatedly)
+#            kubectl exec -n lab-dns-nxdomain checkout -- cat /etc/resolv.conf
+#            kubectl get svc -A --field-selector metadata.name=payments-api
+# Question:  the Service exists and has endpoints. Which search domain did the short name expand to?
+# Fix:       call payments-api.lab-dns-nxdomain-payments (or the full .svc.cluster.local name).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab-dns-nxdomain
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab-dns-nxdomain-payments
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments-api
+  namespace: lab-dns-nxdomain-payments
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: payments-api }
+  template:
+    metadata:
+      labels: { app: payments-api }
+    spec:
+      containers:
+        - name: api
+          image: nginx:1.27
+          ports:
+            - { name: http, containerPort: 80 }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 64Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payments-api
+  namespace: lab-dns-nxdomain-payments
+spec:
+  selector: { app: payments-api }
+  ports:
+    - { name: http, port: 80, targetPort: http }
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: checkout
+  namespace: lab-dns-nxdomain
+spec:
+  containers:
+    - name: checkout
+      image: busybox:1.36
+      env:
+        - { name: PAYMENTS_HOST, value: payments-api }
+      command: ["sh", "-c", "while true; do nslookup $PAYMENTS_HOST || true; sleep 10; done"]
+      resources:
+        requests: { cpu: 10m, memory: 16Mi }
+        limits: { memory: 32Mi }

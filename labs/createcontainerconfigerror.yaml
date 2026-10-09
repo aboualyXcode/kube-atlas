@@ -1,0 +1,46 @@
+# Lab: createcontainerconfigerror
+# Atlas:     index.html#/failures/createcontainerconfigerror   (Markdown: docs/failures/createcontainerconfigerror.md)
+# Reproduce: kubectl apply -f labs/createcontainerconfigerror.yaml
+# Observe:   kubectl get pods -n lab-createcontainerconfigerror   (CreateContainerConfigError, 0 restarts)
+#            kubectl describe pod -n lab-createcontainerconfigerror -l app=orders-api | sed -n '/Events/,$p'
+# Question:  the Secret exists in another namespace. Why does that not help?
+# Fix:       kubectl create secret generic orders-db -n lab-createcontainerconfigerror \
+#              --from-literal=DATABASE_URL=postgres://orders-db:5432/orders
+#            (no restart needed: the kubelet retries on its own)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab-createcontainerconfigerror
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: orders-db
+  namespace: default
+stringData:
+  DATABASE_URL: postgres://orders-db:5432/orders
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-api
+  namespace: lab-createcontainerconfigerror
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: orders-api }
+  template:
+    metadata:
+      labels: { app: orders-api }
+    spec:
+      containers:
+        - name: api
+          image: busybox:1.36
+          command: ["sh", "-c", "echo using $DATABASE_URL; sleep 3600"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: orders-db, key: DATABASE_URL }
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 32Mi }

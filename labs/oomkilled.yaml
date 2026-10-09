@@ -1,0 +1,42 @@
+# Lab: oomkilled
+# Atlas:     index.html#/failures/oomkilled   (Markdown: docs/failures/oomkilled.md)
+# Reproduce: kubectl apply -f labs/oomkilled.yaml
+# Observe:   kubectl get pods -n lab-oomkilled -w
+#            kubectl describe pod -n lab-oomkilled -l app=catalog-cache   (Reason: OOMKilled, Exit Code: 137)
+# Question:  why do the container's own logs say nothing about running out of memory?
+# Fix:       raise limits.memory to 512Mi (or shrink CACHE_MB below the limit), re-apply.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab-oomkilled
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-cache
+  namespace: lab-oomkilled
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: catalog-cache }
+  template:
+    metadata:
+      labels: { app: catalog-cache }
+    spec:
+      containers:
+        - name: cache
+          image: python:3.12-slim
+          env:
+            - { name: CACHE_MB, value: "300" }
+          command: ["python", "-c"]
+          args:
+            - |
+              import os, time
+              mb = int(os.environ["CACHE_MB"])
+              print(f"warming a {mb} MiB product cache", flush=True)
+              cache = b"x" * (mb * 1024 * 1024)
+              print("cache ready", flush=True)
+              time.sleep(3600)
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 128Mi }

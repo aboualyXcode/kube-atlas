@@ -1,0 +1,10 @@
+# A local cluster for the labs: one control plane and three workers.
+# `make kind-up` creates it, then labels the workers with zones and taints atlas-worker3 as a batch node.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: atlas
+nodes:
+  - role: control-plane
+  - role: worker
+  - role: worker
+  - role: worker

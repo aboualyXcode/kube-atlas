@@ -1,0 +1,38 @@
+# Lab: rollout-stuck
+# Atlas:     index.html#/failures/rollout-stuck   (Markdown: docs/failures/rollout-stuck.md)
+# Reproduce: kubectl apply -f labs/rollout-stuck.yaml
+# Observe:   kubectl rollout status deployment/orders-api -n lab-rollout-stuck   (fails after 60 s)
+#            kubectl get events -n lab-rollout-stuck -w   (which component wrote each event?)
+#            kubectl get deploy orders-api -n lab-rollout-stuck -o jsonpath='{.status.conditions}'
+# Question:  the Deployment reports the stall. Which step of the life of a pod actually stopped?
+# Fix:       the readiness probe checks port 8080; nginx listens on 80. Use port: http, re-apply.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab-rollout-stuck
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-api
+  namespace: lab-rollout-stuck
+spec:
+  replicas: 2
+  progressDeadlineSeconds: 60
+  selector:
+    matchLabels: { app: orders-api }
+  template:
+    metadata:
+      labels: { app: orders-api }
+    spec:
+      containers:
+        - name: api
+          image: nginx:1.27
+          ports:
+            - { name: http, containerPort: 80 }
+          readinessProbe:
+            tcpSocket: { port: 8080 }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 64Mi }

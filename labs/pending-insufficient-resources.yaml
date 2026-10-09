@@ -1,0 +1,33 @@
+# Lab: pending-insufficient-resources
+# Atlas:     index.html#/failures/pending-insufficient-resources   (Markdown: docs/failures/pending-insufficient-resources.md)
+# Reproduce: kubectl apply -f labs/pending-insufficient-resources.yaml
+# Observe:   kubectl get pods -n lab-pending-insufficient-resources
+#            kubectl describe pod -n lab-pending-insufficient-resources -l app=search-reindex | sed -n '/Events/,$p'
+#            kubectl describe nodes | grep -A8 "Allocated resources"
+# Question:  your laptop is idle. Why does the scheduler say there is no CPU?
+# Fix:       request what the job uses (cpu: 250m, memory: 256Mi), re-apply.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab-pending-insufficient-resources
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: search-reindex
+  namespace: lab-pending-insufficient-resources
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: search-reindex }
+  template:
+    metadata:
+      labels: { app: search-reindex }
+    spec:
+      containers:
+        - name: reindex
+          image: busybox:1.36
+          command: ["sh", "-c", "sleep 3600"]
+          resources:
+            requests: { cpu: "64", memory: 256Gi }
+            limits: { memory: 256Gi }

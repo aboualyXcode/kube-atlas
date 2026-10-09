@@ -1,0 +1,37 @@
+# Lab: liveness-probe-restarts
+# Atlas:     index.html#/failures/liveness-probe-restarts   (Markdown: docs/failures/liveness-probe-restarts.md)
+# Reproduce: kubectl apply -f labs/liveness-probe-restarts.yaml
+# Observe:   kubectl get pods -n lab-liveness-probe-restarts -w   (RESTARTS climbing)
+#            kubectl get events -n lab-liveness-probe-restarts --field-selector reason=Killing
+# Question:  the "health check" takes 3 seconds; the probe waits 1. What would a restart fix here?
+# Fix:       timeoutSeconds: 5 and failureThreshold: 6 (the contract in chapter 4), or remove the probe.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab-liveness-probe-restarts
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-api
+  namespace: lab-liveness-probe-restarts
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: orders-api }
+  template:
+    metadata:
+      labels: { app: orders-api }
+    spec:
+      containers:
+        - name: api
+          image: nginx:1.27
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "sleep 3"]   # a health check that is slow under load
+            periodSeconds: 5
+            timeoutSeconds: 1
+            failureThreshold: 2
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 64Mi }

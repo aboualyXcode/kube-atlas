@@ -1,0 +1,29 @@
+# Helm values for eks/aws-load-balancer-controller. Its webhooks sit in the API request path,
+# so it runs highly available on the platform node group (docs/failures/webhook-unavailable.md).
+clusterName: larder-prod
+region: eu-west-1
+vpcId: vpc-0a1b2c3d4e5f67890
+replicaCount: 2
+serviceAccount:
+  create: true
+  name: aws-load-balancer-controller     # AWS access through the Pod Identity association in cluster.yaml
+nodeSelector:
+  role: platform
+tolerations:
+  - key: CriticalAddonsOnly
+    operator: Exists
+podDisruptionBudget:
+  maxUnavailable: 1
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: aws-load-balancer-controller
+# Larder sets loadBalancerClass explicitly on every Service, so the Service mutating webhook is not
+# needed; disabling it removes one way the controller's outage can block Service creation.
+enableServiceMutatorWebhook: false
+resources:
+  requests: { cpu: 100m, memory: 256Mi }
+  limits: { memory: 512Mi }

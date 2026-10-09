@@ -1,0 +1,94 @@
+# dispatch-worker: consumes delivery jobs from SQS. No port, so readiness is an exec check and scaling
+# follows queue depth (KEDA), not CPU.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dispatch-worker
+  namespace: fulfilment
+automountServiceAccountToken: false    # Pod Identity association: larder-prod-dispatch-worker
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dispatch-worker
+  namespace: fulfilment
+  labels: { app: dispatch-worker }
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  selector:
+    matchLabels: { app: dispatch-worker }
+  template:
+    metadata:
+      labels: { app: dispatch-worker }
+    spec:
+      serviceAccountName: dispatch-worker
+      priorityClassName: tier-2
+      terminationGracePeriodSeconds: 120     # finish the job in hand; SQS visibility timeout is 180 s
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app: dispatch-worker } }
+      containers:
+        - name: worker
+          image: 111122223333.dkr.ecr.eu-west-1.amazonaws.com/dispatch-worker:2.14.3
+          env:
+            - { name: QUEUE_URL, value: "https://sqs.eu-west-1.amazonaws.com/111122223333/dispatch-jobs" }
+            - { name: MAPS_HOST, value: "maps.example-provider.com." }   # trailing dot: no ndots search expansion
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { memory: 768Mi }
+          readinessProbe:
+            exec: { command: ["/app/healthcheck", "--ready"] }
+            periodSeconds: 15
+            timeoutSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dispatch-worker
+  namespace: fulfilment
+spec:
+  maxUnavailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels: { app: dispatch-worker }
+---
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: aws-pod-identity
+  namespace: fulfilment
+spec:
+  podIdentity:
+    provider: aws
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: dispatch-worker
+  namespace: fulfilment
+spec:
+  scaleTargetRef: { name: dispatch-worker }
+  minReplicaCount: 3
+  maxReplicaCount: 60
+  cooldownPeriod: 300
+  triggers:
+    - type: aws-sqs-queue
+      authenticationRef: { name: aws-pod-identity }
+      metadata:
+        queueURL: https://sqs.eu-west-1.amazonaws.com/111122223333/dispatch-jobs
+        queueLength: "20"          # target messages per replica
+        awsRegion: eu-west-1
+        identityOwner: workload    # use the worker's own Pod Identity role

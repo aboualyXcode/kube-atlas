@@ -1,0 +1,46 @@
+# Explained in the atlas (EKS storage). EKS 1.30+ clusters have no default class until you declare one.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer     # the volume follows the scheduler's choice of zone
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+parameters:
+  type: gp3
+  encrypted: "true"
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3-retain-cmk
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Retain                        # data outlives the claim
+parameters:
+  type: gp3
+  encrypted: "true"
+  # the EBS CSI driver's role must be allowed in this key's policy (docs/failures/volume-attach-failed.md)
+  kmsKeyId: arn:aws:kms:eu-west-1:111122223333:key/0a1b2c3d-7777-8888-9999-000011112222
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: efs-shared
+provisioner: efs.csi.aws.com
+parameters:
+  provisioningMode: efs-ap                   # one access point per claim
+  fileSystemId: fs-0a1b2c3d
+  directoryPerms: "700"
+  basePath: /dynamic
+---
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotClass
+metadata:
+  name: ebs-snapshots
+driver: ebs.csi.aws.com
+deletionPolicy: Retain

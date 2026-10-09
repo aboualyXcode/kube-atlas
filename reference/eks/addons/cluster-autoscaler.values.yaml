@@ -1,0 +1,23 @@
+# Alternative to Karpenter: Helm values for autoscaler/cluster-autoscaler, for clusters built on
+# managed node groups. Explained in the atlas (EKS autoscaling).
+autoDiscovery:
+  clusterName: larder-prod          # finds ASGs tagged k8s.io/cluster-autoscaler/larder-prod
+awsRegion: eu-west-1
+replicaCount: 2
+extraArgs:
+  balance-similar-node-groups: "true"   # one node group per AZ for zonal (EBS) workloads
+  expander: least-waste
+  skip-nodes-with-system-pods: "false"
+  scale-down-utilization-threshold: "0.5"
+  scale-down-unneeded-time: 10m
+rbac:
+  serviceAccount:
+    name: cluster-autoscaler
+nodeSelector:
+  role: platform
+tolerations:
+  - key: CriticalAddonsOnly
+    operator: Exists
+resources:
+  requests: { cpu: 100m, memory: 300Mi }
+  limits: { memory: 600Mi }

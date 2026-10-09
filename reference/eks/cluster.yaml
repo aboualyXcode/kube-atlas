@@ -1,0 +1,135 @@
+# larder-prod: reference eksctl configuration. Replace every ID, ARN and CIDR before use.
+# Explained in the atlas (EKS), the atlas (EKS networking) and the atlas (EKS identity).
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: larder-prod
+  region: eu-west-1
+  version: "1.35"            # a version in EKS standard support; upgrade with docs/runbooks/cluster-upgrade.md
+  tags:
+    karpenter.sh/discovery: larder-prod
+    larder.example/environment: prod
+
+# The VPC is managed separately (one module for all environments): public, private (nodes) and data
+# subnets in three AZs, a secondary CIDR 100.64.0.0/16 for pods, one NAT gateway per AZ, VPC endpoints.
+vpc:
+  id: vpc-0a1b2c3d4e5f67890
+  subnets:
+    private:
+      eu-west-1a: { id: subnet-0a00000000000001a }
+      eu-west-1b: { id: subnet-0b00000000000001b }
+      eu-west-1c: { id: subnet-0c00000000000001c }
+    public:
+      eu-west-1a: { id: subnet-0a00000000000002a }
+      eu-west-1b: { id: subnet-0b00000000000002b }
+      eu-west-1c: { id: subnet-0c00000000000002c }
+  clusterEndpoints:
+    privateAccess: true      # nodes use the private endpoint (needs VPC DNS hostnames and resolution)
+    publicAccess: true       # people and CI, from known ranges only
+  publicAccessCIDRs:
+    - 203.0.113.0/24         # office and VPN egress
+    - 198.51.100.0/24        # CI runners
+
+secretsEncryption:
+  keyARN: arn:aws:kms:eu-west-1:111122223333:key/0a1b2c3d-1111-2222-3333-444455556666
+
+cloudWatch:
+  clusterLogging:
+    enableTypes: ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+    logRetentionInDays: 90
+
+accessConfig:
+  authenticationMode: API    # access entries only; no aws-auth ConfigMap
+  accessEntries:
+    - principalARN: arn:aws:iam::111122223333:role/platform-breakglass
+      accessPolicies:
+        - policyARN: arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy
+          accessScope: { type: cluster }
+    - principalARN: arn:aws:iam::111122223333:role/platform-oncall
+      accessPolicies:
+        - policyARN: arn:aws:eks::aws:cluster-access-policy/AmazonEKSAdminViewPolicy
+          accessScope: { type: cluster }
+        - policyARN: arn:aws:eks::aws:cluster-access-policy/AmazonEKSEditPolicy
+          accessScope: { type: namespace, namespaces: ["shop", "fulfilment", "catalog"] }
+    - principalARN: arn:aws:iam::111122223333:role/ci-deploy-shop
+      accessPolicies:
+        - policyARN: arn:aws:eks::aws:cluster-access-policy/AmazonEKSEditPolicy
+          accessScope: { type: namespace, namespaces: ["shop"] }
+    # Karpenter's node role must be able to join: without this entry, nodes launch but never register.
+    - principalARN: arn:aws:iam::111122223333:role/KarpenterNodeRole-larder-prod
+      type: EC2_LINUX
+
+iam:
+  withOIDC: false            # workloads use EKS Pod Identity, not IRSA
+  podIdentityAssociations:
+    - namespace: kube-system
+      serviceAccountName: aws-load-balancer-controller
+      roleName: larder-prod-aws-load-balancer-controller
+      wellKnownPolicies: { awsLoadBalancerController: true }
+    - namespace: fulfilment
+      serviceAccountName: dispatch-worker
+      roleName: larder-prod-dispatch-worker
+      permissionPolicyARNs: ["arn:aws:iam::111122223333:policy/larder-prod-dispatch-worker"]
+    - namespace: shop
+      serviceAccountName: orders-api
+      roleName: larder-prod-orders-api
+      permissionPolicyARNs: ["arn:aws:iam::111122223333:policy/larder-prod-orders-api"]
+
+addons:
+  - name: eks-pod-identity-agent
+    version: latest          # pin exact versions in production; review them in every upgrade
+  - name: vpc-cni
+    version: latest
+    useDefaultPodIdentityAssociations: true    # AmazonEKS_CNI_Policy on aws-node, not on the node role
+    configurationValues: |-
+      enableNetworkPolicy: "true"
+      env:
+        ENABLE_PREFIX_DELEGATION: "true"
+        WARM_PREFIX_TARGET: "1"
+        AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG: "true"
+        ENI_CONFIG_LABEL_DEF: "topology.kubernetes.io/zone"
+  - name: coredns
+    version: latest
+    configurationValues: |-
+      autoScaling:
+        enabled: true
+        minReplicas: 3
+        maxReplicas: 12
+  - name: kube-proxy
+    version: latest
+  - name: aws-ebs-csi-driver
+    version: latest
+    useDefaultPodIdentityAssociations: true
+  - name: aws-efs-csi-driver
+    version: latest
+    useDefaultPodIdentityAssociations: true
+  - name: metrics-server
+    version: latest
+
+managedNodeGroups:
+  # Runs what must exist before Karpenter can work: Karpenter itself, CoreDNS, the LB controller.
+  - name: platform
+    amiFamily: AmazonLinux2023
+    instanceTypes: ["m7g.large", "m6g.large"]
+    minSize: 3
+    maxSize: 6
+    desiredCapacity: 3
+    privateNetworking: true
+    volumeSize: 50
+    volumeType: gp3
+    volumeEncrypted: true
+    disableIMDSv1: true
+    labels:
+      role: platform         # the node label contract: see platform/README.md
+    taints:
+      - key: CriticalAddonsOnly
+        value: "true"
+        effect: NoSchedule
+    updateConfig:
+      maxUnavailable: 1
+    iam:
+      attachPolicyARNs:
+        - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore

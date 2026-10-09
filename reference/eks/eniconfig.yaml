@@ -1,0 +1,26 @@
+# VPC CNI custom networking: pods draw addresses from large subnets in the secondary CIDR
+# (100.64.0.0/16), one per AZ, selected by each node's topology.kubernetes.io/zone label.
+# See the atlas (EKS networking) and docs/runbooks/pod-ip-exhaustion.md.
+apiVersion: crd.k8s.amazonaws.com/v1alpha1
+kind: ENIConfig
+metadata:
+  name: eu-west-1a
+spec:
+  subnet: subnet-0a00000000000003a       # 100.64.0.0/18
+  securityGroups: [sg-0a1b2c3d4e5f00001]  # the node baseline security group
+---
+apiVersion: crd.k8s.amazonaws.com/v1alpha1
+kind: ENIConfig
+metadata:
+  name: eu-west-1b
+spec:
+  subnet: subnet-0b00000000000003b       # 100.64.64.0/18
+  securityGroups: [sg-0a1b2c3d4e5f00001]
+---
+apiVersion: crd.k8s.amazonaws.com/v1alpha1
+kind: ENIConfig
+metadata:
+  name: eu-west-1c
+spec:
+  subnet: subnet-0c00000000000003c       # 100.64.128.0/18
+  securityGroups: [sg-0a1b2c3d4e5f00001]

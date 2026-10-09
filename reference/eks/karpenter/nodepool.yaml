@@ -1,0 +1,78 @@
+# Larder's general-purpose capacity. Explained in the atlas (EKS autoscaling).
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: general
+spec:
+  template:
+    metadata:
+      labels:
+        larder.example/pool: general
+    spec:
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: general
+      requirements:
+        # arm64 (Graviton) is allowed: every image must be multi-architecture (docs/failures/exec-format-error.md)
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64", "arm64"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot", "on-demand"]
+        # broad diversity is the main defence against capacity errors
+        - key: karpenter.k8s.aws/instance-category
+          operator: In
+          values: ["c", "m", "r"]
+        - key: karpenter.k8s.aws/instance-generation
+          operator: Gt
+          values: ["5"]
+        - key: topology.kubernetes.io/zone
+          operator: In
+          values: ["eu-west-1a", "eu-west-1b", "eu-west-1c"]
+      expireAfter: 720h              # replace every node at least monthly
+      terminationGracePeriod: 24h    # upper bound for draining before forced termination
+  limits:
+    cpu: "400"
+    memory: 1600Gi
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 5m
+    budgets:
+      - nodes: "10%"                 # never disrupt more than 10% of nodes at once
+      - nodes: "0"                   # no consolidation of underutilized nodes during trading hours
+        reasons: ["Underutilized"]
+        schedule: "0 8 * * mon-fri"
+        duration: 12h
+---
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: general
+spec:
+  role: KarpenterNodeRole-larder-prod      # needs an EC2_LINUX access entry (reference/eks/cluster.yaml)
+  amiSelectorTerms:
+    - alias: al2023@v20260915              # pin; bump deliberately and let drift roll the nodes
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: larder-prod
+  # Select the SAME baseline security group as every other node pool, or databases and webhooks
+  # will not accept traffic from these nodes (the atlas (Failures), worked example 1).
+  securityGroupSelectorTerms:
+    - tags:
+        larder.example/baseline-node-sg: "true"
+  metadataOptions:
+    httpEndpoint: enabled
+    httpProtocolIPv6: disabled
+    httpPutResponseHopLimit: 1             # pods cannot fall back to the node role
+    httpTokens: required
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 80Gi
+        volumeType: gp3
+        encrypted: true
+        deleteOnTermination: true
+  tags:
+    larder.example/environment: prod

@@ -1,0 +1,22 @@
+# Helm values for oci://public.ecr.aws/karpenter/karpenter. Karpenter runs on the platform node group,
+# never on nodes it manages.
+replicas: 2
+settings:
+  clusterName: larder-prod
+  interruptionQueue: Karpenter-larder-prod     # Spot interruptions, rebalance and maintenance events
+serviceAccount:
+  create: true
+  name: karpenter
+nodeSelector:
+  role: platform
+tolerations:
+  - key: CriticalAddonsOnly
+    operator: Exists
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+controller:
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { memory: 1Gi }

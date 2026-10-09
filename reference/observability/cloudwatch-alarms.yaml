@@ -1,0 +1,56 @@
+# CloudWatch alarms for signals that live in AWS rather than in the cluster (CloudFormation).
+# Explained in the atlas (Operations: observe). Runbook links follow "Runbook:" in each AlarmDescription.
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Larder EKS platform alarms that use AWS metrics.
+Parameters:
+  PageTopicArn: { Type: String, Description: SNS topic that pages the on-call engineer }
+  TicketTopicArn: { Type: String, Description: SNS topic that opens a ticket }
+  LoadBalancerFullName: { Type: String, Description: "app/<name>/<id> of the public ALB" }
+  ClusterName: { Type: String, Default: larder-prod }
+Resources:
+  ALBTarget5xxHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: larder-prod-alb-elb-5xx
+      AlarmDescription: "severity=page. The ALB itself is returning 5xx (no healthy targets, resets, timeouts). Runbook: https://github.com/your-org/kube-atlas/blob/main/docs/runbooks/load-balancer-5xx.md"
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_ELB_5XX_Count
+      Dimensions: [{ Name: LoadBalancer, Value: { Ref: LoadBalancerFullName } }]
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 3
+      Threshold: 50
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [{ Ref: PageTopicArn }]
+  ALBUnhealthyTargets:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: larder-prod-alb-unhealthy-targets
+      AlarmDescription: "severity=ticket. At least one ALB target is failing health checks. Runbook: https://github.com/your-org/kube-atlas/blob/main/docs/failures/alb-targets-unhealthy.md"
+      Namespace: AWS/ApplicationELB
+      MetricName: UnHealthyHostCount
+      Dimensions: [{ Name: LoadBalancer, Value: { Ref: LoadBalancerFullName } }]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 10
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [{ Ref: TicketTopicArn }]
+  SubnetFreeAddressesLow:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: larder-prod-subnet-free-addresses-low
+      AlarmDescription: "severity=page. A cluster subnet has less than 10% free addresses (published by tools/eks-preflight.sh --publish-metrics). Runbook: https://github.com/your-org/kube-atlas/blob/main/docs/runbooks/pod-ip-exhaustion.md"
+      Namespace: Larder/EKS
+      MetricName: SubnetFreeAddressPercentMin
+      Dimensions: [{ Name: ClusterName, Value: { Ref: ClusterName } }]
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 10
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [{ Ref: PageTopicArn }]

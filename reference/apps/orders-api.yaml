@@ -1,0 +1,123 @@
+# orders-api: the reference implementation of the production workload contract (the atlas (Architecture)).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: orders-api
+  namespace: shop
+automountServiceAccountToken: false    # it never calls the Kubernetes API; AWS access uses Pod Identity
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-api
+  namespace: shop
+  labels: { app: orders-api, tier: backend }
+spec:
+  replicas: 6
+  revisionHistoryLimit: 5
+  progressDeadlineSeconds: 600
+  minReadySeconds: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 25%, maxUnavailable: 0 }
+  selector:
+    matchLabels: { app: orders-api }
+  template:
+    metadata:
+      labels: { app: orders-api, tier: backend, larder.example/exposed: "true" }
+    spec:
+      serviceAccountName: orders-api
+      priorityClassName: tier-1
+      terminationGracePeriodSeconds: 60          # preStop (20 s) + draining in-flight requests + margin
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: { matchLabels: { app: orders-api } }
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app: orders-api } }
+      containers:
+        - name: api
+          image: 111122223333.dkr.ecr.eu-west-1.amazonaws.com/orders-api:1.42.0   # multi-arch, immutable tag
+          ports:
+            - { name: http, containerPort: 8080 }
+          env:
+            - { name: GOMEMLIMIT, value: "900MiB" }        # runtime sized inside the memory limit
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: orders-db, key: DATABASE_URL } }
+            - { name: HTTP_IDLE_TIMEOUT, value: "75s" }    # longer than the ALB idle timeout (60 s)
+          resources:
+            requests: { cpu: 500m, memory: 768Mi }
+            limits: { memory: 1Gi }                         # no CPU limit: avoids throttling
+          startupProbe:
+            httpGet: { path: /ready, port: http }
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: { path: /ready, port: http }           # local checks only, no shared dependencies
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }         # only detects a wedged process
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          lifecycle:
+            preStop:
+              sleep: { seconds: 20 }                         # stay in rotation while endpoints and the ALB catch up
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-api
+  namespace: shop
+spec:
+  selector: { app: orders-api }
+  ports:
+    - { name: http, port: 80, targetPort: http }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: orders-api
+  namespace: shop
+spec:
+  maxUnavailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow      # broken pods never block node maintenance
+  selector:
+    matchLabels: { app: orders-api }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: orders-api
+  namespace: shop
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: orders-api }
+  minReplicas: 6
+  maxReplicas: 40
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 65 } }
+  behavior:
+    scaleUp:
+      policies: [{ type: Percent, value: 100, periodSeconds: 30 }]
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies: [{ type: Percent, value: 20, periodSeconds: 60 }]

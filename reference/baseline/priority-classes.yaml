@@ -1,0 +1,32 @@
+# Explained in the atlas (Operations). Platform components use the built-in
+# system-cluster-critical and system-node-critical classes.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: tier-1
+value: 100000
+description: Customer-facing critical path (checkout, orders, payments).
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: tier-2
+value: 10000
+globalDefault: true
+description: Internal APIs and workers.
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: batch
+value: 0
+preemptionPolicy: Never
+description: Reports, reindexing, backfills. Never preempts others.
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: capacity-buffer
+value: -10
+preemptionPolicy: Never
+description: Placeholder pods that hold headroom; evicted first, which triggers new nodes.

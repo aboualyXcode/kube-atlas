@@ -1,0 +1,308 @@
+# Larder platform alerts (Prometheus Operator PrometheusRule).
+# Explained in the atlas (Operations: observe). Every runbook_url must point at a file in this repository
+# (npm test checks this). Replace your-org with your repository's location.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: larder-platform
+  namespace: monitoring
+  labels:
+    release: prometheus
+spec:
+  groups:
+  - name: workloads
+    rules:
+    - alert: KubePodCrashLooping
+      expr: max_over_time(kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"}[5m]) >= 1
+      for: 15m
+      labels:
+        severity: ticket
+      annotations:
+        summary: '{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) has been crash looping for 15 minutes'
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/failures/crashloopbackoff.md
+    - alert: KubeContainerOOMKilled
+      expr: (increase(kube_pod_container_status_restarts_total[30m]) >= 2) and on (namespace, pod, container) (kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} == 1)
+      for: 0m
+      labels:
+        severity: ticket
+      annotations:
+        summary: '{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) was OOMKilled repeatedly in the last 30 minutes'
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/failures/oomkilled.md
+    - alert: KubeContainerMemoryNearLimit
+      expr: max by (namespace, pod, container) (container_memory_working_set_bytes{container!=""}) / on (namespace, pod, container) (kube_pod_container_resource_limits{resource="memory"} > 0) > 0.9
+      for: 15m
+      labels:
+        severity: ticket
+      annotations:
+        summary: '{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) is above 90% of its memory limit'
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/failures/oomkilled.md
+    - alert: KubeCPUThrottlingHigh
+      expr: sum by (namespace, pod, container) (rate(container_cpu_cfs_throttled_periods_total{namespace=~"shop|fulfilment|catalog"}[5m])) / sum by (namespace, pod, container) (rate(container_cpu_cfs_periods_total{namespace=~"shop|fulfilment|catalog"}[5m]))
+        > 0.25
+      for: 15m
+      labels:
+        severity: ticket
+      annotations:
+        summary: '{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) is CPU throttled in {{ $value | humanizePercentage }} of periods'
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/failures/cpu-throttling.md
+    - alert: KubeImagePullFailing
+      expr: max_over_time(kube_pod_container_status_waiting_reason{reason=~"ImagePullBackOff|ErrImagePull"}[5m]) >= 1
+      for: 5m
+      labels:
+        severity: ticket
+      annotations:
+        summary: '{{ $labels.namespace }}/{{ $labels.pod }} cannot pull its image'
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/failures/imagepullbackoff.md
+    - alert: KubeContainerConfigError
+      expr: max_over_time(kube_pod_container_status_waiting_reason{reason="CreateContainerConfigError"}[5m]) >= 1
+      for: 5m
+      labels:
+        severity: ticket
+      annotations:
+        summary: '{{ $labels.namespace }}/{{ $labels.pod }} references configuration that does not exist'
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/failures/createcontainerconfigerror.md
+    - alert: KubeDeploymentRolloutStuck
+      expr: kube_deployment_status_condition{condition="Progressing", status="false"} == 1
+      for: 5m
+      labels:
+        severity: ticket
+      annotations:
+        summary: Deployment {{ $labels.namespace }}/{{ $labels.deployment }} exceeded its progress deadline
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/failures/rollout-stuck.md
+    - alert: KubeDeploymentReplicasMissing
+      expr: kube_deployment_spec_replicas{namespace=~"shop|fulfilment|catalog"} - kube_deployment_status_replicas_available{namespace=~"shop|fulfilment|catalog"} > 0
+      for: 15m
+      labels:
+        severity: ticket
+      annotations:
+        summary: Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has had {{ $value }} unavailable replicas for 15 minutes
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/failures/readiness-probe-failing.md
+    - alert: KubeSystemDeploymentUnavailable
+      expr: kube_deployment_status_replicas_available{namespace="kube-system"} == 0 and kube_deployment_spec_replicas{namespace="kube-system"} > 0
+      for: 5m
+      labels:
+        severity: page
+      annotations:
+        summary: Platform component {{ $labels.deployment }} has no available replicas
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/failures/webhook-unavailable.md
+    - alert: KubeDaemonSetUnavailable
+      expr: kube_daemonset_status_number_unavailable > 0
+      for: 15m
+      labels:
+        severity: ticket
+      annotations:
+        summary: DaemonSet {{ $labels.namespace }}/{{ $labels.daemonset }} has {{ $value }} unavailable pods
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/failures/cni-not-ready.md
+    - alert: ServiceWithoutEndpoints
+      expr: kube_endpoint_info{namespace=~"shop|fulfilment|catalog"} unless on (namespace, endpoint) kube_endpoint_address{ready="true"}
+      for: 5m
+      labels:
+        severity: page
+      annotations:
+        summary: Service {{ $labels.namespace }}/{{ $labels.endpoint }} has no ready endpoints
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/runbooks/load-balancer-5xx.md
+    - alert: CheckoutErrorBudgetFastBurn
+      expr: (sum(rate(http_requests_total{service="orders-api",code=~"5.."}[1h])) / sum(rate(http_requests_total{service="orders-api"}[1h]))) > (14.4 * 0.001) and (sum(rate(http_requests_total{service="orders-api",code=~"5.."}[5m]))
+        / sum(rate(http_requests_total{service="orders-api"}[5m]))) > (14.4 * 0.001)
+      for: 2m
+      labels:
+        severity: page
+      annotations:
+        summary: orders-api is burning its 30-day error budget 14x faster than sustainable
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/runbooks/load-balancer-5xx.md
+  - name: scheduling-and-autoscaling
+    rules:
+    - alert: KubePodsPendingTooLong
+      expr: sum by (namespace, pod) (kube_pod_status_phase{phase="Pending"}) > 0
+      for: 10m
+      labels:
+        severity: ticket
+      annotations:
+        summary: '{{ $labels.namespace }}/{{ $labels.pod }} has been Pending for 10 minutes'
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/runbooks/pending-pods-capacity.md
+    - alert: KubePodsPendingCritical
+      expr: count(kube_pod_status_phase{phase="Pending", namespace=~"shop|fulfilment"} > 0) > 5
+      for: 10m
+      labels:
+        severity: page
+      annotations:
+        summary: 'More than 5 production pods have been Pending for 10 minutes: capacity is not arriving'
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/runbooks/pending-pods-capacity.md
+    - alert: KubeHPAMetricsUnavailable
+      expr: kube_horizontalpodautoscaler_status_condition{condition="ScalingActive", status="false"} == 1
+      for: 10m
+      labels:
+        severity: ticket
+      annotations:
+        summary: HPA {{ $labels.namespace }}/{{ $labels.horizontalpodautoscaler }} cannot read its metrics
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/failures/hpa-unknown-metrics.md
+    - alert: KubeHPAMaxedOut
+      expr: kube_horizontalpodautoscaler_status_current_replicas >= kube_horizontalpodautoscaler_spec_max_replicas
+      for: 15m
+      labels:
+        severity: ticket
+      annotations:
+        summary: HPA {{ $labels.namespace }}/{{ $labels.horizontalpodautoscaler }} has been at maxReplicas for 15 minutes
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/failures/pending-insufficient-resources.md
+    - alert: KubePDBBlockingDisruption
+      expr: kube_poddisruptionbudget_status_pod_disruptions_allowed == 0
+      for: 1h
+      labels:
+        severity: ticket
+      annotations:
+        summary: PDB {{ $labels.namespace }}/{{ $labels.poddisruptionbudget }} has allowed no disruptions for an hour; it will block drains
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/failures/drain-blocked-by-pdb.md
+    - alert: KubeQuotaAlmostFull
+      expr: kube_resourcequota{type="used"} / on (namespace, resourcequota, resource) (kube_resourcequota{type="hard"} > 0) > 0.85
+      for: 15m
+      labels:
+        severity: ticket
+      annotations:
+        summary: Quota {{ $labels.namespace }}/{{ $labels.resourcequota }} is above 85% for {{ $labels.resource }}
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/failures/resource-quota-exceeded.md
+  - name: nodes
+    rules:
+    - alert: KubeNodeNotReady
+      expr: kube_node_status_condition{condition="Ready", status="true"} == 0
+      for: 5m
+      labels:
+        severity: ticket
+      annotations:
+        summary: Node {{ $labels.node }} has been NotReady for 5 minutes
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/runbooks/node-not-ready.md
+    - alert: KubeNodesNotReadyMany
+      expr: count(kube_node_status_condition{condition="Ready", status="true"} == 0) > 1
+      for: 5m
+      labels:
+        severity: page
+      annotations:
+        summary: '{{ $value }} nodes are NotReady: look for a shared cause'
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/runbooks/node-not-ready.md
+    - alert: KubeNodePressure
+      expr: kube_node_status_condition{condition=~"MemoryPressure|DiskPressure|PIDPressure", status="true"} == 1
+      for: 5m
+      labels:
+        severity: ticket
+      annotations:
+        summary: Node {{ $labels.node }} reports {{ $labels.condition }}
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/failures/node-pressure-eviction.md
+    - alert: NodeFilesystemAlmostFull
+      expr: node_filesystem_avail_bytes{mountpoint="/", fstype!="tmpfs"} / node_filesystem_size_bytes{mountpoint="/", fstype!="tmpfs"} < 0.2
+      for: 15m
+      labels:
+        severity: ticket
+      annotations:
+        summary: Root filesystem on {{ $labels.instance }} is more than 80% full
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/failures/node-pressure-eviction.md
+  - name: dns
+    rules:
+    - alert: CoreDNSLatencyHigh
+      expr: histogram_quantile(0.99, sum by (le) (rate(coredns_dns_request_duration_seconds_bucket[5m]))) > 0.1
+      for: 10m
+      labels:
+        severity: page
+      annotations:
+        summary: CoreDNS p99 latency is {{ $value | humanizeDuration }}
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/runbooks/dns-degraded.md
+    - alert: CoreDNSErrorsHigh
+      expr: sum(rate(coredns_dns_responses_total{rcode="SERVFAIL"}[5m])) / sum(rate(coredns_dns_responses_total[5m])) > 0.01
+      for: 10m
+      labels:
+        severity: page
+      annotations:
+        summary: More than 1% of DNS responses are SERVFAIL
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/runbooks/dns-degraded.md
+  - name: storage
+    rules:
+    - alert: KubePVCPending
+      expr: kube_persistentvolumeclaim_status_phase{phase="Pending"} == 1
+      for: 15m
+      labels:
+        severity: ticket
+      annotations:
+        summary: PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} has been Pending for 15 minutes
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/failures/pvc-pending-provisioning.md
+    - alert: KubePersistentVolumeFillingUp
+      expr: kubelet_volume_stats_available_bytes / kubelet_volume_stats_capacity_bytes < 0.15
+      for: 15m
+      labels:
+        severity: ticket
+      annotations:
+        summary: Volume {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} has less than 15% free space
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/failures/volume-attach-failed.md
+  - name: control-plane
+    rules:
+    - alert: KubeAPIErrorsHigh
+      expr: sum(rate(apiserver_request_total{code=~"5.."}[5m])) / sum(rate(apiserver_request_total[5m])) > 0.03
+      for: 10m
+      labels:
+        severity: page
+      annotations:
+        summary: More than 3% of API server requests are failing
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/runbooks/api-server-degraded.md
+    - alert: KubeAPILatencyHigh
+      expr: histogram_quantile(0.99, sum by (le, verb) (rate(apiserver_request_duration_seconds_bucket{verb=~"POST|PUT|PATCH|DELETE"}[5m]))) > 1
+      for: 15m
+      labels:
+        severity: ticket
+      annotations:
+        summary: API server p99 latency for {{ $labels.verb }} is above 1 second
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/runbooks/api-server-degraded.md
+    - alert: KubeAPIPriorityAndFairnessRejecting
+      expr: sum by (priority_level, flow_schema) (rate(apiserver_flowcontrol_rejected_requests_total[5m])) > 0
+      for: 10m
+      labels:
+        severity: ticket
+      annotations:
+        summary: API Priority and Fairness is rejecting requests in {{ $labels.priority_level }} ({{ $labels.flow_schema }})
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/failures/api-throttling.md
+    - alert: AdmissionWebhookSlow
+      expr: histogram_quantile(0.99, sum by (le, name) (rate(apiserver_admission_webhook_admission_duration_seconds_bucket[5m]))) > 2
+      for: 10m
+      labels:
+        severity: ticket
+      annotations:
+        summary: Admission webhook {{ $labels.name }} p99 latency is above 2 seconds
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/failures/webhook-unavailable.md
+    - alert: AggregatedAPIUnavailable
+      expr: max by (name) (aggregator_unavailable_apiservice) == 1
+      for: 10m
+      labels:
+        severity: ticket
+      annotations:
+        summary: APIService {{ $labels.name }} is unavailable; namespace deletion and discovery are affected
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/failures/apiservice-unavailable.md
+    - alert: EtcdStorageGrowing
+      expr: max(apiserver_storage_size_bytes) > 4e9
+      for: 30m
+      labels:
+        severity: ticket
+      annotations:
+        summary: 'The etcd database is larger than 4 GB: look for object bloat'
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/failures/etcd-space-exceeded.md
+  - name: certificates
+    rules:
+    - alert: CertificateExpiringSoon
+      expr: (certmanager_certificate_expiration_timestamp_seconds - time()) < 21 * 24 * 3600
+      for: 1h
+      labels:
+        severity: ticket
+      annotations:
+        summary: Certificate {{ $labels.namespace }}/{{ $labels.name }} expires in less than 21 days
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/runbooks/certificate-expiry.md
+    - alert: CertificateExpiringCritical
+      expr: (certmanager_certificate_expiration_timestamp_seconds - time()) < 7 * 24 * 3600
+      for: 1h
+      labels:
+        severity: page
+      annotations:
+        summary: Certificate {{ $labels.namespace }}/{{ $labels.name }} expires in less than 7 days
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/runbooks/certificate-expiry.md
+    - alert: CertificateNotReady
+      expr: certmanager_certificate_ready_status{condition="False"} == 1
+      for: 30m
+      labels:
+        severity: ticket
+      annotations:
+        summary: Certificate {{ $labels.namespace }}/{{ $labels.name }} is not Ready
+        runbook_url: https://github.com/your-org/kube-atlas/blob/main/docs/failures/x509-certificate-errors.md

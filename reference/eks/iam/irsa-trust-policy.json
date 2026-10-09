@@ -1,0 +1,19 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowServiceAccountViaOidc",
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::111122223333:oidc-provider/oidc.eks.eu-west-1.amazonaws.com/id/5C7A9E1B2D3F4A6B8C0D"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "oidc.eks.eu-west-1.amazonaws.com/id/5C7A9E1B2D3F4A6B8C0D:sub": "system:serviceaccount:fulfilment:dispatch-worker",
+          "oidc.eks.eu-west-1.amazonaws.com/id/5C7A9E1B2D3F4A6B8C0D:aud": "sts.amazonaws.com"
+        }
+      }
+    }
+  ]
+}

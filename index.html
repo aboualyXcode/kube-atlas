@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Kube Atlas: Kubernetes and EKS as a map you can click</title>
+  <meta name="description" content="An interactive map of Kubernetes and Amazon EKS: what each component does, how they work together, and how a failure in one surfaces somewhere else.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M4 26 16 6l12 20' fill='none' stroke='%232B59C3' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='16' cy='18' r='5' fill='%23D7263D'/%3E%3C/svg%3E">
+  <!-- Overpass, a typeface drawn from highway signage. Remove these three lines for strictly
+       offline use: the atlas falls back to system fonts and makes no network requests at all. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700;800&family=Overpass+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="assets/atlas.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="topbar">
+    <a class="brand" href="#/" aria-label="Kube Atlas home">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 26 16 6l12 20" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="16" cy="18" r="4.5" class="brand-dot"/></svg>
+      <span>Kube Atlas</span>
+    </a>
+    <nav class="nav" aria-label="Sections">
+      <a href="#/architecture" data-nav="architecture">Architecture</a>
+      <a href="#/eks" data-nav="eks">EKS</a>
+      <a href="#/failures" data-nav="failures">Failures</a>
+      <a href="#/incidents" data-nav="incidents">Incidents</a>
+      <a href="#/operations" data-nav="operations">Operations</a>
+    </nav>
+    <div class="tools">
+      <button type="button" class="tool" data-action="find" aria-label="Find (press /)">Find <kbd>/</kbd></button>
+      <button type="button" class="tool" data-action="theme" aria-label="Switch theme"><span class="theme-name">Auto</span></button>
+    </div>
+  </header>
+  <main id="main" tabindex="-1"></main>
+  <dialog id="finder" class="finder" aria-label="Find">
+    <input id="finder-q" type="search" placeholder="Find a component, failure, flow or runbook" autocomplete="off" spellcheck="false" aria-controls="finder-list">
+    <ul id="finder-list" class="finder-list" role="listbox"></ul>
+  </dialog>
+  <noscript><p class="noscript">Kube Atlas draws its diagrams with JavaScript. The same content is available as Markdown in <a href="docs/failures/README.md">docs/</a>.</p></noscript>
+
+  <!-- Namespace first, then data, then the engine. scripts/atlas.mjs reads this list in order. -->
+  <script src="assets/js/core/ns.js"></script>
+  <script src="data/taxonomy.js"></script>
+  <script src="data/components.js"></script>
+  <script src="data/maps.js"></script>
+  <script src="data/flows.js"></script>
+  <script src="data/failures/workload.js"></script>
+  <script src="data/failures/scheduling.js"></script>
+  <script src="data/failures/node.js"></script>
+  <script src="data/failures/networking.js"></script>
+  <script src="data/failures/dns.js"></script>
+  <script src="data/failures/storage.js"></script>
+  <script src="data/failures/autoscaling.js"></script>
+  <script src="data/failures/identity.js"></script>
+  <script src="data/failures/load-balancing.js"></script>
+  <script src="data/failures/control-plane.js"></script>
+  <script src="data/triage.js"></script>
+  <script src="data/incidents.js"></script>
+  <script src="data/runbooks.js"></script>
+  <script src="data/alerts.js"></script>
+  <script src="data/operations.js"></script>
+  <script src="assets/js/core/util.js"></script>
+  <script src="assets/js/core/md.js"></script>
+  <script src="assets/js/core/catalog.js"></script>
+  <script src="assets/js/core/router.js"></script>
+  <script src="assets/js/diagram/map.js"></script>
+  <script src="assets/js/diagram/player.js"></script>
+  <script src="assets/js/views/shared.js"></script>
+  <script src="assets/js/views/explore.js"></script>
+  <script src="assets/js/views/failures.js"></script>
+  <script src="assets/js/views/incidents.js"></script>
+  <script src="assets/js/views/operations.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
